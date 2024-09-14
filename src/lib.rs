@@ -1,19 +1,19 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
-
+use std::collections::{BinaryHeap, HashMap};
+use rustc_hash::FxHashMap;
 use ordered_float::OrderedFloat;
 
 #[derive(Debug, Clone)]
 pub struct DocumentStats {
     doc_id: u32,
     doc_length: u32,
-    term_freq: HashMap<String, u32>,
+    term_freq: FxHashMap<String, u32>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Index {
-    inverted_index: HashMap<String, HashSet<u32>>,
-    doc_stats: HashMap<u32, DocumentStats>,
+    inverted_index: FxHashMap<String, Vec<u32>>,
+    doc_stats: FxHashMap<u32, DocumentStats>,
     total_doc_lengths: u32,
     k: f64,
     b: f64,
@@ -22,18 +22,17 @@ pub struct Index {
 impl Index {
     pub fn new() -> Index {
         Index {
-            inverted_index: HashMap::new(),
-            doc_stats: HashMap::new(),
+            inverted_index: FxHashMap::default(),
+            doc_stats: FxHashMap::default(),
             total_doc_lengths: 0,
             k: 1.5,
             b: 0.75,
         }
     }
 
-    fn update_inverted_index(&mut self, terms: Vec<String>, doc_id: u32) {
+    fn update_inverted_index(&mut self, terms: &[String], doc_id: u32) {
         for term in terms {
-            let entry = self.inverted_index.entry(term).or_insert_with(HashSet::new);
-            entry.insert(doc_id);
+            self.inverted_index.entry(term.clone()).or_insert_with(Vec::new).push(doc_id);
         }
     }
 
@@ -41,35 +40,25 @@ impl Index {
         self.inverted_index.get(term).map_or(0, |ids| ids.len() as u32)
     }
 
-    fn term_frequency(&self, terms: &[String]) -> HashMap<String, u32> {
-        let mut term_freq = HashMap::new();
-    
+    fn term_frequency(&self, terms: &[String]) -> FxHashMap<String, u32> {
+        let mut term_freq = FxHashMap::default();
+        
         for term in terms {
-            if term_freq.contains_key(term) {
-                let count = term_freq.get_mut(term).unwrap();
-                *count += 1;
-            } else {
-                term_freq.insert(term.clone(), 1);
-            }
+            *term_freq.entry(term.clone()).or_insert(0) += 1;
         }
-    
+
         term_freq
     }
 
     pub fn index_doc(&mut self, doc: &str, doc_id: u32) {
-        // Process input document
         let mut terms = tokenize(doc);
         terms = stemmer(&terms).to_vec();
 
         let num_terms = terms.len();
-
-        // Calculate term frequency
         let term_freq = self.term_frequency(&terms);
 
-        // Update inverted index
-        self.update_inverted_index(terms, doc_id);
+        self.update_inverted_index(&terms, doc_id);
 
-        // Update document stats
         self.doc_stats.insert(
             doc_id,
             DocumentStats {
@@ -78,8 +67,6 @@ impl Index {
                 term_freq,
             },
         );
-
-        // Update total document lengths
         self.total_doc_lengths += num_terms as u32;
     }
 
@@ -88,53 +75,43 @@ impl Index {
         let query_terms = stemmer(&query_terms).to_vec();
         let avg_doc_length = self.total_doc_lengths as f64 / self.doc_stats.len() as f64;
         let num_docs = self.doc_stats.len() as f64;
-    
-        // Get documents that contain query terms
-        let mut doc_ids = HashSet::new();
-        for term in &query_terms {
-            if let Some(ids) = self.inverted_index.get(term) {
-                doc_ids.extend(ids);
-            }
-        }
-    
-        let mut top_k_docs = BinaryHeap::new();
-    
-        for doc_id in doc_ids {
-            if let Some(doc) = self.doc_stats.get(&doc_id) {
-                let mut score = 0.0;
-                for term in &query_terms {
-                    let term_freq = doc.term_freq.get(term).copied().unwrap_or_default() as f64;
+
+        let mut doc_scores = Vec::new();
+
+        for doc_id in self.doc_stats.keys() {
+            let doc = &self.doc_stats[doc_id];
+            let doc_length = doc.doc_length as f64;
+            let length_norm = self.k * ((1.0 - self.b) + self.b * doc_length / avg_doc_length);
+            let mut score = 0.0;
+
+            for term in &query_terms {
+                if let Some(&term_freq) = doc.term_freq.get(term) {
+                    let term_freq = term_freq as f64;
                     let doc_freq = self.doc_frequency(term) as f64;
-                    if doc_freq == 0.0 || term_freq == 0.0 {
-                        continue;
-                    }
-                    
-                    let doc_length = doc.doc_length as f64;
-                    let tf = term_freq / (self.k * ((1.0 - self.b) + self.b * doc_length / avg_doc_length) + term_freq);
-                    let idf = ((num_docs - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0).ln();
-                    score += tf * idf;
-                }
-                
-                if top_k_docs.len() < top_k as usize {
-                    top_k_docs.push(Reverse((OrderedFloat(score), doc_id)));
-                } else if let Some(&Reverse((lowest_score, _))) = top_k_docs.peek() {
-                    if OrderedFloat(score) > lowest_score {
-                        top_k_docs.pop();
-                        top_k_docs.push(Reverse((OrderedFloat(score), doc_id)));
+
+                    if doc_freq > 0.0 {
+                        let tf = term_freq / (length_norm + term_freq);
+                        let idf = ((num_docs - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0).ln();
+                        score += tf * idf;
                     }
                 }
             }
+
+            if score > 0.0 {
+                doc_scores.push((OrderedFloat(score), *doc_id));
+            }
         }
-    
-        let mut results = Vec::new();
-        while let Some(Reverse((score, doc_id))) = top_k_docs.pop() {
-            results.push((score, doc_id));
+
+        doc_scores.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+
+        if doc_scores.len() > top_k as usize {
+            doc_scores.truncate(top_k as usize);
         }
-    
-        results.reverse();
-        results
+
+        doc_scores
     }
 }
+
 
 pub fn tokenize(doc: &str) -> Vec<String> {
     doc.split_whitespace().map(|s| s.to_string()).collect()
