@@ -36,6 +36,9 @@ index.delete(0)
 
 ## TODO
 
+- [ ] Add better/more tests
+- [ ] Add some CICD
+- [ ] Publish the package!
 - [ ] Support metadata filtering
 - [ ] Support creating collections
 - [ ] Support launching as a server from the CLI
