@@ -40,7 +40,7 @@ impl Index {
         self.inverted_index.get(term).map_or(0, |ids| ids.len() as u32)
     }
 
-    fn term_frequency(&self, terms: &[String]) -> FxHashMap<String, u32> {
+    pub fn term_frequency(&self, terms: &[String]) -> FxHashMap<String, u32> {
         let mut term_freq = FxHashMap::default();
         
         for term in terms {
@@ -142,8 +142,9 @@ mod tests {
 
     #[test]
     fn test_term_frequency() {
+        let index = Index::new();
         let terms = vec!["like".to_string(), "like".to_string(), "cats".to_string()];
-        let term_freq = term_frequency(&terms);
+        let term_freq = index.term_frequency(&terms);
         assert_eq!(term_freq.get("like"), Some(&2));
         assert_eq!(term_freq.get("cats"), Some(&1));
     }
