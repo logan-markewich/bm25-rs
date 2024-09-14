@@ -11,6 +11,8 @@ It works by:
 ## Usage
 
 ```rust
+use bm25_rs::Index;
+
 let mut index = Index::new();
 
 // Insert document text + doc_id pairs
