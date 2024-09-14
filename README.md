@@ -34,6 +34,6 @@ index.delete(0)
 
 ## TODO
 
-- [] Support metadata filtering
-- [] Support creating collections
-- [] Support launching as a server from the CLI
+- [ ] Support metadata filtering
+- [ ] Support creating collections
+- [ ] Support launching as a server from the CLI
