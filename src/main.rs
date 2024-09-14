@@ -48,7 +48,7 @@ fn main() {
         let insert_start_time = Instant::now();
         for i in 0..num_docs {
             let doc = generate_document(i);
-            index.index_doc(&doc, i as u32);
+            index.upsert(&doc, i as u32);
         }
         let index_time = insert_start_time.elapsed().as_secs_f64();
 

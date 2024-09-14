@@ -48,7 +48,14 @@ impl Index {
         term_freq
     }
 
-    pub fn index_doc(&mut self, doc: &str, doc_id: u32) {
+    pub fn upsert(&mut self, doc: &str, doc_id: u32) {
+        if self.doc_stats.contains_key(&doc_id) {
+            self.delete(doc_id);
+        }
+        self.insert(doc, doc_id);
+    }
+
+    fn insert(&mut self, doc: &str, doc_id: u32) {
         let mut terms = tokenize(doc);
         terms = stemmer(&terms).to_vec();
         let num_terms = terms.len();
@@ -63,6 +70,17 @@ impl Index {
             },
         );
         self.total_doc_lengths += num_terms as u32;
+    }
+
+    pub fn delete(&mut self, doc_id: u32) {
+        if let Some(doc) = self.doc_stats.remove(&doc_id) {
+            self.total_doc_lengths -= doc.doc_length;
+            for (term, freq) in doc.term_freq {
+                if let Some(ids) = self.inverted_index.get_mut(&term) {
+                    ids.retain(|&id| id != doc_id);
+                }
+            }
+        }
     }
 
     pub fn search(&self, query: &str, top_k: u32) -> Vec<(OrderedFloat<f64>, u32)> {
@@ -159,11 +177,11 @@ mod tests {
     }
 
     #[test]
-    fn test_index_doc() {
+    fn test_insert() {
         let mut index = Index::new();
-        index.index_doc("Hello world", 0);
-        index.index_doc("I like like cats", 1);
-        index.index_doc("I like dogs", 2);
+        index.insert("Hello world", 0);
+        index.insert("I like like cats", 1);
+        index.insert("I like dogs", 2);
 
         assert_eq!(index.inverted_index.get("like"), Some(&vec![1, 1, 2]));
         assert_eq!(index.doc_stats.len(), 3);
@@ -172,9 +190,9 @@ mod tests {
     #[test]
     fn test_search() {
         let mut index = Index::new();
-        index.index_doc("Hello world", 123);
-        index.index_doc("I like like cats", 456);
-        index.index_doc("I like dogs", 789);
+        index.insert("Hello world", 123);
+        index.insert("I like like cats", 456);
+        index.insert("I like dogs", 789);
 
         let results = index.search("like", 3);
         assert_eq!(results.len(), 2);
