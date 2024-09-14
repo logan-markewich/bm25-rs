@@ -5,8 +5,9 @@ This project implements an efficient version of BM25 using Rust. It allows for i
 It works by:
 
 - Tracking document stats like lengths and term frequencies
-- Utilizing an inverted index for quickly finding documents that specific terms
-- Calculates BM25 TF and IDF at search time using subset of documents that are relevant
+- Utilizing an inverted index for quickly finding documents with specific terms
+- Calculates BM25 TF and IDF at search time using a subset of relevant documents from the inverted index
+- Keeps track of top-k in a binary heap for memory-efficient retrieval
 
 ## Usage
 
