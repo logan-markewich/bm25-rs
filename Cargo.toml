@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 ordered-float = "4.2.2"
+rustc-hash = "2.0.0"
+
