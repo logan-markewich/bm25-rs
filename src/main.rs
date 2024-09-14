@@ -59,7 +59,7 @@ fn main() {
         let search_time = search_start_time.elapsed().as_secs_f64();
 
         // Measure memory usage now
-        let memory_usage = measure_memory().unwrap_or(0) - initial_memory_usage;
+        let memory_usage = (measure_memory().unwrap_or(0) - initial_memory_usage) as f64 / 1024.0;
 
         writeln!(file, "{},{},{},{}", num_docs, index_time, search_time, memory_usage).expect("Failed to write data");
         

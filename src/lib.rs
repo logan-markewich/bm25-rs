@@ -40,25 +40,20 @@ impl Index {
         self.inverted_index.get(term).map_or(0, |ids| ids.len() as u32)
     }
 
-    pub fn term_frequency(&self, terms: &[String]) -> FxHashMap<String, u32> {
+    fn term_frequency(&self, terms: &[String]) -> FxHashMap<String, u32> {
         let mut term_freq = FxHashMap::default();
-        
         for term in terms {
             *term_freq.entry(term.clone()).or_insert(0) += 1;
         }
-
         term_freq
     }
 
     pub fn index_doc(&mut self, doc: &str, doc_id: u32) {
         let mut terms = tokenize(doc);
         terms = stemmer(&terms).to_vec();
-
         let num_terms = terms.len();
         let term_freq = self.term_frequency(&terms);
-
         self.update_inverted_index(&terms, doc_id);
-
         self.doc_stats.insert(
             doc_id,
             DocumentStats {
@@ -71,44 +66,58 @@ impl Index {
     }
 
     pub fn search(&self, query: &str, top_k: u32) -> Vec<(OrderedFloat<f64>, u32)> {
-        let query_terms = tokenize(query);
-        let query_terms = stemmer(&query_terms).to_vec();
+        let query_terms: Vec<String> = tokenize(query).into_iter().map(|t| stemmer(&[t])[0].clone()).collect();
         let avg_doc_length = self.total_doc_lengths as f64 / self.doc_stats.len() as f64;
         let num_docs = self.doc_stats.len() as f64;
 
-        let mut doc_scores = Vec::new();
+        let mut doc_ids = Vec::new();
+        for term in &query_terms {
+            if let Some(ids) = self.inverted_index.get(term) {
+                doc_ids.extend_from_slice(ids);
+            }
+        }
 
-        for doc_id in self.doc_stats.keys() {
-            let doc = &self.doc_stats[doc_id];
-            let doc_length = doc.doc_length as f64;
-            let length_norm = self.k * ((1.0 - self.b) + self.b * doc_length / avg_doc_length);
-            let mut score = 0.0;
+        doc_ids.sort_unstable();
+        doc_ids.dedup();
 
-            for term in &query_terms {
-                if let Some(&term_freq) = doc.term_freq.get(term) {
-                    let term_freq = term_freq as f64;
-                    let doc_freq = self.doc_frequency(term) as f64;
+        let mut top_k_docs = BinaryHeap::new();
 
-                    if doc_freq > 0.0 {
-                        let tf = term_freq / (length_norm + term_freq);
-                        let idf = ((num_docs - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0).ln();
-                        score += tf * idf;
+        for doc_id in doc_ids {
+            if let Some(doc) = self.doc_stats.get(&doc_id) {
+                let doc_length = doc.doc_length as f64;
+                let length_norm = self.k * ((1.0 - self.b) + self.b * doc_length / avg_doc_length);
+                let mut score = 0.0;
+
+                for term in &query_terms {
+                    if let Some(&term_freq) = doc.term_freq.get(term) {
+                        let term_freq = term_freq as f64;
+                        let doc_freq = self.doc_frequency(term) as f64;
+                        if doc_freq > 0.0 {
+                            let tf = term_freq / (length_norm + term_freq);
+                            let idf = ((num_docs - doc_freq + 0.5) / (doc_freq + 0.5) + 1.0).ln();
+                            score += tf * idf;
+                        }
+                    }
+                }
+
+                if top_k_docs.len() < top_k as usize {
+                    top_k_docs.push(Reverse((OrderedFloat(score), doc_id)));
+                } else if let Some(&Reverse((lowest_score, _))) = top_k_docs.peek() {
+                    if OrderedFloat(score) > lowest_score {
+                        top_k_docs.pop();
+                        top_k_docs.push(Reverse((OrderedFloat(score), doc_id)));
                     }
                 }
             }
-
-            if score > 0.0 {
-                doc_scores.push((OrderedFloat(score), *doc_id));
-            }
         }
 
-        doc_scores.sort_unstable_by(|a, b| b.0.cmp(&a.0));
-
-        if doc_scores.len() > top_k as usize {
-            doc_scores.truncate(top_k as usize);
+        let mut results = Vec::new();
+        while let Some(Reverse((score, doc_id))) = top_k_docs.pop() {
+            results.push((score, doc_id));
         }
 
-        doc_scores
+        results.reverse();
+        results
     }
 }
 
