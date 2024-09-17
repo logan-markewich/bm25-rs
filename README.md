@@ -39,7 +39,7 @@ index.delete(0)
 
 - [ ] Add better/more tests
 - [ ] Add some CICD
-- [ ] Publish the package!
 - [ ] Support metadata filtering
-- [ ] Support creating collections
+- [ ] Publish the package!
 - [ ] Support launching as a server from the CLI
+- [ ] Support creating collections/multiple indexes in server mode
